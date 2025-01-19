@@ -13,18 +13,28 @@ import { join, resolve, dirname } from "path";
 var isJsOrTsFile = (path) => {
   return /\.(js|jsx|ts|tsx)$/.test(path);
 };
-var extractImports = (content) => {
+var extractImports = (content, options = {}) => {
+  const log = (...args) => {
+    if (options.debug) {
+      console.log(...args);
+    }
+  };
   const importRegex = /import\s+(?:(?:[\w*\s{},]*)\s+from\s+)?['"]([@./][^'"]+)['"]/g;
   const imports = [];
   let match;
   const normalizedContent = content.replace(/\r\n/g, "\n");
   while ((match = importRegex.exec(normalizedContent)) !== null) {
-    console.log("  Found import match:", match[0], "-> path:", match[1]);
+    log("  Found import match:", match[0], "-> path:", match[1]);
     imports.push(match[1]);
   }
   return imports;
 };
-var loadTsConfig = async (startDir) => {
+var loadTsConfig = async (startDir, options = {}) => {
+  const log = (...args) => {
+    if (options.debug) {
+      console.log(...args);
+    }
+  };
   let currentDir = startDir;
   while (currentDir !== "/") {
     try {
@@ -32,8 +42,8 @@ var loadTsConfig = async (startDir) => {
       await stat(tsconfigPath);
       const content = await readFile(tsconfigPath, "utf-8");
       const tsconfig = JSON.parse(content);
-      console.log("  Found tsconfig at:", tsconfigPath);
-      console.log("  Paths:", tsconfig.compilerOptions?.paths);
+      log("  Found tsconfig at:", tsconfigPath);
+      log("  Paths:", tsconfig.compilerOptions?.paths);
       return {
         baseUrl: tsconfig.compilerOptions?.baseUrl,
         paths: tsconfig.compilerOptions?.paths,
@@ -43,68 +53,73 @@ var loadTsConfig = async (startDir) => {
       currentDir = dirname(currentDir);
     }
   }
-  console.log("  No tsconfig.json found");
+  log("  No tsconfig.json found");
   return {};
 };
-var resolveImportPath = async (importPath, currentDir) => {
-  console.log(`
+var resolveImportPath = async (importPath, currentDir, options = {}) => {
+  const log = (...args) => {
+    if (options.debug) {
+      console.log(...args);
+    }
+  };
+  log(`
   Resolving import: ${importPath} from ${currentDir}`);
   if (importPath.startsWith("@")) {
-    console.log("  Import uses @ prefix, checking tsconfig paths");
-    const tsconfig = await loadTsConfig(currentDir);
+    log("  Import uses @ prefix, checking tsconfig paths");
+    const tsconfig = await loadTsConfig(currentDir, options);
     if (tsconfig.paths && tsconfig.tsconfigDir) {
       for (const [pattern, [replacement]] of Object.entries(tsconfig.paths)) {
         const patternRegex = new RegExp("^" + pattern.replace("*", "(.*)") + "$");
         const match = importPath.match(patternRegex);
         if (match) {
-          console.log(`  Matched pattern ${pattern} -> ${replacement}`);
+          log(`  Matched pattern ${pattern} -> ${replacement}`);
           const baseDir = tsconfig.baseUrl ? join(tsconfig.tsconfigDir, tsconfig.baseUrl) : tsconfig.tsconfigDir;
           const resolvedPath2 = join(baseDir, replacement.replace("*", match[1]));
-          console.log(`  Resolved to: ${resolvedPath2}`);
-          return resolveImportPath(resolvedPath2, baseDir);
+          log(`  Resolved to: ${resolvedPath2}`);
+          return resolveImportPath(resolvedPath2, baseDir, options);
         }
       }
-      console.log("  No matching pattern found in tsconfig paths");
+      log("  No matching pattern found in tsconfig paths");
     }
   }
   const resolvedPath = resolve(currentDir, importPath);
-  console.log(`  Trying path: ${resolvedPath}`);
+  log(`  Trying path: ${resolvedPath}`);
   const extensions = [".tsx", ".ts", ".jsx", ".js"];
   if (/\.[^/.]+$/.test(importPath)) {
     try {
       await stat(resolvedPath);
-      console.log(`  Found exact match: ${resolvedPath}`);
+      log(`  Found exact match: ${resolvedPath}`);
       return resolvedPath;
     } catch {
-      console.log(`  Exact match not found: ${resolvedPath}`);
+      log(`  Exact match not found: ${resolvedPath}`);
     }
   }
   for (const ext of extensions) {
     const pathWithExt = resolvedPath + ext;
     try {
       await stat(pathWithExt);
-      console.log(`  Found with extension: ${pathWithExt}`);
+      log(`  Found with extension: ${pathWithExt}`);
       return pathWithExt;
     } catch {
-      console.log(`  Not found with extension: ${pathWithExt}`);
+      log(`  Not found with extension: ${pathWithExt}`);
     }
   }
   for (const ext of extensions) {
     const indexPath = join(resolvedPath, `index${ext}`);
     try {
       await stat(indexPath);
-      console.log(`  Found index file: ${indexPath}`);
+      log(`  Found index file: ${indexPath}`);
       return indexPath;
     } catch {
-      console.log(`  Index file not found: ${indexPath}`);
+      log(`  Index file not found: ${indexPath}`);
     }
   }
-  console.log(`  Could not resolve ${importPath}, returning original resolved path`);
+  log(`  Could not resolve ${importPath}, returning original resolved path`);
   return resolvedPath;
 };
-var processFile = async (filePath) => {
+var processFile = async (filePath, options = {}) => {
   const content = await readFile(filePath, "utf-8");
-  const imports = extractImports(content);
+  const imports = extractImports(content, options);
   return {
     path: filePath,
     content,
@@ -129,8 +144,13 @@ var findTsFiles = async (dir) => {
 };
 
 // src/analyzer.ts
-var analyzeImports = async (path, maxDepth = 0) => {
-  console.log(`
+var analyzeImports = async (path, maxDepth = 0, options = {}) => {
+  const log = (...args) => {
+    if (options.debug) {
+      console.log(...args);
+    }
+  };
+  log(`
 Analyzing ${path} with max depth ${maxDepth}`);
   const absolutePath = resolve2(process.cwd(), path);
   const stats = await stat2(absolutePath);
@@ -141,36 +161,36 @@ Analyzing ${path} with max depth ${maxDepth}`);
   const processedPaths = /* @__PURE__ */ new Set();
   async function processFileRecursively(filePath, currentDepth) {
     if (processedPaths.has(filePath)) {
-      console.log(`  [${currentDepth}] Already processed ${filePath}`);
+      log(`  [${currentDepth}] Already processed ${filePath}`);
       return;
     }
-    console.log(`
+    log(`
   [${currentDepth}] Processing ${filePath}`);
     processedPaths.add(filePath);
-    const node = await processFile(filePath);
+    const node = await processFile(filePath, options);
     result.content[node.path] = node.content;
-    console.log(`  [${currentDepth}] Found imports:`, node.imports);
+    log(`  [${currentDepth}] Found imports:`, node.imports);
     const resolvedImports = await Promise.all(
       node.imports.map(
-        (importPath) => resolveImportPath(importPath, dirname2(node.path))
+        (importPath) => resolveImportPath(importPath, dirname2(node.path), options)
       )
     );
-    console.log(`  [${currentDepth}] Resolved to:`, resolvedImports);
+    log(`  [${currentDepth}] Resolved to:`, resolvedImports);
     result.imports[node.path] = resolvedImports;
     if (currentDepth < maxDepth) {
-      console.log(`  [${currentDepth}] Following imports (depth < ${maxDepth})`);
+      log(`  [${currentDepth}] Following imports (depth < ${maxDepth})`);
       for (const resolvedPath of resolvedImports) {
         if (resolvedPath) {
           try {
             await stat2(resolvedPath);
             await processFileRecursively(resolvedPath, currentDepth + 1);
           } catch (err) {
-            console.log(`  [${currentDepth}] Failed to process ${resolvedPath}:`, err?.message || String(err));
+            log(`  [${currentDepth}] Failed to process ${resolvedPath}:`, err?.message || String(err));
           }
         }
       }
     } else {
-      console.log(`  [${currentDepth}] Max depth reached, stopping`);
+      log(`  [${currentDepth}] Max depth reached, stopping`);
     }
   }
   const initialFiles = stats.isDirectory() ? await findTsFiles(absolutePath) : [absolutePath];
@@ -181,10 +201,16 @@ Analyzing ${path} with max depth ${maxDepth}`);
 // src/cli.ts
 async function main() {
   try {
-    const [, , path, depthArg = "0"] = process.argv;
+    const args = process.argv.slice(2);
+    const debugIndex = args.indexOf("--debug");
+    const debug = debugIndex !== -1;
+    if (debug) {
+      args.splice(debugIndex, 1);
+    }
+    const [path, depthArg = "0"] = args;
     if (!path) {
       console.error("Please provide a path to analyze");
-      console.error("Usage: deepcontext <path> [depth]");
+      console.error("Usage: deepcontext <path> [depth] [--debug]");
       console.error("Example: deepcontext admin-wrapper.tsx 2");
       process.exit(1);
     }
@@ -194,11 +220,10 @@ async function main() {
       process.exit(1);
     }
     const absolutePath = resolve3(process.cwd(), path);
-    const result = await analyzeImports(absolutePath, depth);
+    const result = await analyzeImports(absolutePath, depth, { debug });
     Object.entries(result.content).forEach(([filepath, content]) => {
       console.log(`
-# ${filepath}
-`);
+------- ${filepath} -------`);
       console.log(content);
     });
   } catch (error) {
