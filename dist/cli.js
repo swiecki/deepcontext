@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-#!/usr/bin/env node
 
 // src/cli.ts
 import { resolve as resolve3 } from "path";
