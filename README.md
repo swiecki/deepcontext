@@ -1,6 +1,6 @@
 # DeepContext
 
-A Next.js import analyzer for deep context analysis. This tool helps you analyze and understand import relationships in your Next.js projects.
+Given OpenAI o-1 pro more context on your nextjs (or other typescript) project by logging out your file and automatically doing the same for your imports.
 
 ## Usage
 
