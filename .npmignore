@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Version control
+.git/
+.gitignore
+
+# Source files (since we're publishing the dist folder)
+src/
+
+# Test files
+test/
+*.test.ts
+*.spec.ts
+
+# Development configs
+tsconfig.json
+tsup.config.ts
+.eslintrc*
+.prettier*
+vitest.config.*
+
+# Editor directories
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
