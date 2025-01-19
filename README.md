@@ -5,8 +5,25 @@ A Next.js import analyzer for deep context analysis. This tool helps you analyze
 ## Usage
 
 ```bash
-npx deepcontext <directory>  # Analyze all files in a directory
-npx deepcontext <file>       # Analyze a specific file
+npx deepcontext <path> [depth]
+```
+
+### Parameters
+
+- `path`: Path to a file or directory to analyze
+- `depth` (optional): How many levels deep to analyze imports. Defaults to 0 (surface-level imports only)
+
+### Examples
+
+```bash
+# Analyze a single file's direct imports
+npx deepcontext pages/index.tsx
+
+# Analyze a file with nested imports (depth of 2)
+npx deepcontext pages/index.tsx 2
+
+# Analyze all files in a directory
+npx deepcontext src/
 ```
 
 ## Requirements
