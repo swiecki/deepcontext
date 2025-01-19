@@ -24,11 +24,16 @@ export const isJsOrTsFile = (path: string): boolean => {
  * Extracts local imports from TypeScript/JavaScript file content
  */
 export const extractImports = (content: string): string[] => {
-  const importRegex = /import\s+(?:(?:[\w*\s{},]*)\s+from\s+)?['"]([./][^'"]+)['"]/g;
+  // Match both simple and destructured imports, including multi-line
+  const importRegex = /import\s+(?:(?:[\w*\s{},]*)\s+from\s+)?['"]([@./][^'"]+)['"]/g;
   const imports: string[] = [];
   let match;
 
-  while ((match = importRegex.exec(content)) !== null) {
+  // Handle multi-line content by normalizing newlines
+  const normalizedContent = content.replace(/\r\n/g, '\n');
+
+  while ((match = importRegex.exec(normalizedContent)) !== null) {
+    console.log('  Found import match:', match[0], '-> path:', match[1]);
     imports.push(match[1]);
   }
 
@@ -36,20 +41,72 @@ export const extractImports = (content: string): string[] => {
 };
 
 /**
+ * Loads and parses tsconfig.json from the current directory or parent directories
+ */
+export const loadTsConfig = async (startDir: string): Promise<{ baseUrl?: string; paths?: Record<string, string[]>; tsconfigDir?: string }> => {
+  let currentDir = startDir;
+  
+  while (currentDir !== '/') {
+    try {
+      const tsconfigPath = join(currentDir, 'tsconfig.json');
+      await stat(tsconfigPath);
+      const content = await readFile(tsconfigPath, 'utf-8');
+      const tsconfig = JSON.parse(content);
+      console.log('  Found tsconfig at:', tsconfigPath);
+      console.log('  Paths:', tsconfig.compilerOptions?.paths);
+      return {
+        baseUrl: tsconfig.compilerOptions?.baseUrl,
+        paths: tsconfig.compilerOptions?.paths,
+        tsconfigDir: currentDir
+      };
+    } catch {
+      currentDir = dirname(currentDir);
+    }
+  }
+  
+  console.log('  No tsconfig.json found');
+  return {};
+};
+
+/**
  * Resolves a relative import path to an absolute file path
  */
 export const resolveImportPath = async (importPath: string, currentDir: string): Promise<string> => {
+  console.log(`\n  Resolving import: ${importPath} from ${currentDir}`);
+  
+  // Handle tsconfig paths for @ imports
+  if (importPath.startsWith('@')) {
+    console.log('  Import uses @ prefix, checking tsconfig paths');
+    const tsconfig = await loadTsConfig(currentDir);
+    if (tsconfig.paths && tsconfig.tsconfigDir) {
+      for (const [pattern, [replacement]] of Object.entries(tsconfig.paths)) {
+        const patternRegex = new RegExp('^' + pattern.replace('*', '(.*)') + '$');
+        const match = importPath.match(patternRegex);
+        if (match) {
+          console.log(`  Matched pattern ${pattern} -> ${replacement}`);
+          const baseDir = tsconfig.baseUrl ? join(tsconfig.tsconfigDir, tsconfig.baseUrl) : tsconfig.tsconfigDir;
+          const resolvedPath = join(baseDir, replacement.replace('*', match[1]));
+          console.log(`  Resolved to: ${resolvedPath}`);
+          return resolveImportPath(resolvedPath, baseDir);
+        }
+      }
+      console.log('  No matching pattern found in tsconfig paths');
+    }
+  }
+
   // Handle index files
   const resolvedPath = resolve(currentDir, importPath);
+  console.log(`  Trying path: ${resolvedPath}`);
   const extensions = ['.tsx', '.ts', '.jsx', '.js'];
   
   // If path already has an extension, try it first
   if (/\.[^/.]+$/.test(importPath)) {
     try {
       await stat(resolvedPath);
+      console.log(`  Found exact match: ${resolvedPath}`);
       return resolvedPath;
     } catch {
-      // Continue to try other possibilities
+      console.log(`  Exact match not found: ${resolvedPath}`);
     }
   }
   
@@ -58,9 +115,10 @@ export const resolveImportPath = async (importPath: string, currentDir: string):
     const pathWithExt = resolvedPath + ext;
     try {
       await stat(pathWithExt);
+      console.log(`  Found with extension: ${pathWithExt}`);
       return pathWithExt;
     } catch {
-      continue;
+      console.log(`  Not found with extension: ${pathWithExt}`);
     }
   }
   
@@ -69,13 +127,14 @@ export const resolveImportPath = async (importPath: string, currentDir: string):
     const indexPath = join(resolvedPath, `index${ext}`);
     try {
       await stat(indexPath);
+      console.log(`  Found index file: ${indexPath}`);
       return indexPath;
     } catch {
-      continue;
+      console.log(`  Index file not found: ${indexPath}`);
     }
   }
   
-  // If nothing found, return original resolved path
+  console.log(`  Could not resolve ${importPath}, returning original resolved path`);
   return resolvedPath;
 };
 
